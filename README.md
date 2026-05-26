@@ -2,20 +2,30 @@
 
 ## Quick Start
 
-### 1. Get Your API Key
-Generate a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
+### 1. Get Your API Keys
+
+- **Primary**: Gemini API key from [Google AI Studio](https://aistudio.google.com/) (`GEMINI_API_KEY`)
+- **Fallback 1** (optional): Second Google key for Gemini 1.5 Flash (`GEMINI_OLD_KEY`)
+- **Fallback 2** (optional): [Groq](https://console.groq.com/) API key (`GROQ_API_KEY`)
+- **Fallback 3** (optional): [OpenRouter](https://openrouter.ai/) API key (`OPENROUTER_API_KEY`)
+
+The app tries providers in order: **Gemini 3 → Gemini 1.5 (old key) → Groq → OpenRouter**, so scans and chat keep working when one provider is rate-limited.
 
 ### 2. Run the App
 
 **The simplest way to run on iOS or Android:**
 
 ```bash
-flutter run --release --dart-define=GEMINI_API_KEY=your_actual_api_key_here
+flutter run --release \
+  --dart-define=GEMINI_API_KEY=your_gemini_key \
+  --dart-define=GEMINI_OLD_KEY=your_legacy_gemini_key \
+  --dart-define=GROQ_API_KEY=your_groq_key \
+  --dart-define=OPENROUTER_API_KEY=your_openrouter_key
 ```
 
-Replace `your_actual_api_key_here` with your actual Gemini API key.
+Only `GEMINI_API_KEY` is required for basic use; add the others for full fallback coverage.
 
-> **Important**: Always use the `--dart-define` flag - never hardcode your API key in the source code.
+> **Important**: Always use `--dart-define` — never hardcode API keys in source code.
 
 ### 3. Build for Production
 
@@ -32,7 +42,11 @@ flutter build apk --release --dart-define=GEMINI_API_KEY=your_actual_api_key_her
 
 **Android App Bundle (Google Play):**
 ```bash
-flutter build appbundle --release --dart-define=GEMINI_API_KEY=your_actual_api_key_here
+flutter build appbundle --release \
+  --dart-define=GEMINI_API_KEY=your_gemini_key \
+  --dart-define=GEMINI_OLD_KEY=your_legacy_gemini_key \
+  --dart-define=GROQ_API_KEY=your_groq_key \
+  --dart-define=OPENROUTER_API_KEY=your_openrouter_key
 ```
 
 ## IDE Configuration (Optional)
@@ -56,6 +70,12 @@ Create/edit `.vscode/launch.json`:
   ]
 }
 ```
+
+## AdMob (production)
+
+App open ads show on cold start and each time the app returns to the foreground. iOS shows the App Tracking Transparency dialog on first launch (including iPad); if the user taps **Ask App Not to Track**, ads still load as **non-personalized** (NPA).
+
+Rebuild with the same `--dart-define` flags as AI keys are separate.
 
 ## Troubleshooting
 

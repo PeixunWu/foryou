@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app_state.dart';
-import 'config/gemini_config.dart';
+import 'services/admob/admob_initializer.dart';
+import 'widgets/admob_app_wrapper.dart';
 import 'screens/analysis_screen.dart';
 import 'screens/coach_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -13,9 +14,14 @@ import 'screens/scanner_screen.dart';
 import 'screens/compare_skin_screen.dart';
 import 'screens/settings_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ForyouApp());
+  await AdMobInitializer.initialize();
+  runApp(
+    const AdMobAppWrapper(
+      child: ForyouApp(),
+    ),
+  );
 }
 
 class ForyouApp extends StatelessWidget {

@@ -4,21 +4,18 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import '../config/gemini_config.dart';
+import 'ai_fallback_manager.dart';
 
-/// Gemini HTTP client with model fallback (Gemini 3 → 1.5 Flash → 1.5 Flash‑Lite).
+/// App-facing AI service. All requests go through [AiFallbackManager]:
+/// Gemini 3 → Gemini 1.5 (legacy key) → Groq → OpenRouter.
 class GeminiService {
-  GeminiService({http.Client? client}) : _client = client ?? http.Client();
+  GeminiService({http.Client? client})
+      : _fallback = AiFallbackManager(client: client);
 
-  final http.Client _client;
+  final AiFallbackManager _fallback;
 
-  static const String _apiBase =
-      'https://generativelanguage.googleapis.com/v1beta';
-
-  /// Model fallback chain: Try Gemini 3 first, then fallback to 1.5 Flash variants.
-  static const String primaryModel = 'gemini-3-flash-preview';
-  static const String fallbackModel1 = 'gemini-1.5-flash';
-  static const String fallbackModel2 = 'gemini-1.5-flash-8b'; // Flash-Lite
+  static const String primaryModel = AiFallbackManager.gemini3Model;
+  static const String fallbackModel1 = AiFallbackManager.gemini15Model;
 
   /// Analyze a pill/medicine from image bytes.
   /// Prefer high-resolution capture for box fine print.
@@ -59,26 +56,13 @@ Respond in this exact JSON structure (no markdown, no extra text). Use plain Eng
 }
 ''';
 
-    final contents = [
-      {
-        'role': 'user',
-        'parts': [
-          {
-            'inlineData': {
-              'data': base64Encode(imageBytes),
-              'mimeType': 'image/jpeg',
-            },
-          },
-          {
-            'text': prompt,
-          },
-        ],
-      },
-    ];
-
-    final responseJson =
-        await _generateContentWithFallback(contents: contents);
-    final text = _extractText(responseJson) ?? '{}';
+    final text = await _fallback.complete(
+      AiRequest(
+        prompt: prompt,
+        images: [AiImagePart(imageBytes)],
+      ),
+      fallbackMessage: '{}',
+    );
     return ScanAnalysis.fromGeminiResponse(text, ScanMode.pill);
   }
 
@@ -118,26 +102,13 @@ Respond in this exact JSON structure (no markdown, no extra text).
 }
 ''';
 
-    final contents = [
-      {
-        'role': 'user',
-        'parts': [
-          {
-            'inlineData': {
-              'data': base64Encode(imageBytes),
-              'mimeType': 'image/jpeg',
-            },
-          },
-          {
-            'text': prompt,
-          },
-        ],
-      },
-    ];
-
-    final responseJson =
-        await _generateContentWithFallback(contents: contents);
-    final text = _extractText(responseJson) ?? '{}';
+    final text = await _fallback.complete(
+      AiRequest(
+        prompt: prompt,
+        images: [AiImagePart(imageBytes)],
+      ),
+      fallbackMessage: '{}',
+    );
     return ScanAnalysis.fromGeminiResponse(text, ScanMode.skin);
   }
 
@@ -177,26 +148,13 @@ Respond in this exact JSON structure (no markdown, no extra text).
 }
 ''';
 
-    final contents = [
-      {
-        'role': 'user',
-        'parts': [
-          {
-            'inlineData': {
-              'data': base64Encode(imageBytes),
-              'mimeType': 'image/jpeg',
-            },
-          },
-          {
-            'text': prompt,
-          },
-        ],
-      },
-    ];
-
-    final responseJson =
-        await _generateContentWithFallback(contents: contents);
-    final text = _extractText(responseJson) ?? '{}';
+    final text = await _fallback.complete(
+      AiRequest(
+        prompt: prompt,
+        images: [AiImagePart(imageBytes)],
+      ),
+      fallbackMessage: '{}',
+    );
     return ScanAnalysis.fromGeminiResponse(text, ScanMode.food);
   }
 
@@ -210,35 +168,16 @@ Compare them and summarize the changes in 2-3 concise sentences.
 Determine whether the skin health is improving or worsening overall.
 Respond in a concise, expert tone but do NOT use the phrase "skin health expert" or "doctor" in your response.
 ''';
-    try {
-      final contents = [
-        {
-          'role': 'user',
-          'parts': [
-            {'text': prompt},
-            {
-              'inlineData': {
-                'data': base64Encode(imageOld),
-                'mimeType': 'image/jpeg',
-              },
-            },
-            {
-              'inlineData': {
-                'data': base64Encode(imageNew),
-                'mimeType': 'image/jpeg',
-              },
-            },
-          ],
-        },
-      ];
-
-      final responseJson =
-          await _generateContentWithFallback(contents: contents);
-      final text = _extractText(responseJson);
-      return text ?? 'Could not generate comparison.';
-    } catch (e) {
-      return 'Comparison error: $e';
-    }
+    return _fallback.complete(
+      AiRequest(
+        prompt: prompt,
+        images: [
+          AiImagePart(imageOld),
+          AiImagePart(imageNew),
+        ],
+      ),
+      fallbackMessage: 'Could not generate comparison. Please try again.',
+    );
   }
 
   /// AI Insight of the Day (dashboard).
@@ -248,19 +187,11 @@ You are Foryou AI. In one short, friendly sentence, give a personalized skin ins
 User's daily skin score: $skinScore%. ${recentActivity != null ? "Recent: $recentActivity" : ""}
 Reply with only that one sentence, no quotes.
 ''';
-    final contents = [
-      {
-        'role': 'user',
-        'parts': [
-          {'text': prompt},
-        ],
-      },
-    ];
-
-    final responseJson =
-        await _generateContentWithFallback(contents: contents);
-    final text = _extractText(responseJson);
-    return text?.trim() ?? 'Your skin is looking great today!';
+    final text = await _fallback.complete(
+      AiRequest(prompt: prompt),
+      fallbackMessage: 'Your skin is looking great today!',
+    );
+    return text.trim();
   }
 
   /// Agentic scheduling: when to remind user to reapply (e.g. medication).
@@ -275,47 +206,23 @@ The user applied their medication at $appliedAt. It lasts for $durationHours hou
 ${nextEvent != null ? "They have: $nextEvent." : ""}
 When is the best time to remind them to reapply? Reply with one short sentence (e.g. "Remind at 2 PM, 30 minutes before your meeting.").
 ''';
-    final contents = [
-      {
-        'role': 'user',
-        'parts': [
-          {'text': prompt},
-        ],
-      },
-    ];
-
-    final responseJson =
-        await _generateContentWithFallback(contents: contents);
-    final text = _extractText(responseJson);
-    return text?.trim() ?? 'Remind in $durationHours hours.';
+    final text = await _fallback.complete(
+      AiRequest(prompt: prompt),
+      fallbackMessage: 'Remind in $durationHours hours.',
+    );
+    return text.trim();
   }
   /// Chat with the AI coach.
   Future<String> coachChat(List<MapEntry<String, String>> history, String userMessage) async {
-    final contents = <Map<String, dynamic>>[];
+    final chatHistory = <AiChatTurn>[];
     for (final entry in history) {
       if (entry.key.isNotEmpty) {
-        contents.add({
-          'role': 'user',
-          'parts': [
-            {'text': entry.key},
-          ],
-        });
+        chatHistory.add(AiChatTurn(role: 'user', text: entry.key));
       }
       if (entry.value.isNotEmpty) {
-        contents.add({
-          'role': 'model',
-          'parts': [
-            {'text': entry.value},
-          ],
-        });
+        chatHistory.add(AiChatTurn(role: 'assistant', text: entry.value));
       }
     }
-    contents.add({
-      'role': 'user',
-      'parts': [
-        {'text': userMessage},
-      ],
-    });
 
     const systemInstruction =
         "You are a health expert, dermatologist, and skin health expert. "
@@ -323,13 +230,16 @@ When is the best time to remind them to reapply? Reply with one short sentence (
         "Never explicitly state that you are a health expert, dermatologist, or skin health expert in your responses. "
         "Stay in character and answer from this professional perspective.";
 
-    final responseJson = await _generateContentWithFallback(
-      contents: contents,
-      systemInstruction: systemInstruction,
+    final text = await _fallback.complete(
+      AiRequest(
+        prompt: userMessage,
+        systemInstruction: systemInstruction,
+        chatHistory: chatHistory,
+      ),
+      fallbackMessage:
+          "I'm here to help. Try asking about your routine or progress.",
     );
-    final text = _extractText(responseJson);
-    return text?.trim() ??
-        "I'm here to help. Try asking about your routine or progress.";
+    return text.trim();
   }
 
   /// Compare before/after skin (for Context Caching: cache Day 1 image and
@@ -338,179 +248,18 @@ When is the best time to remind them to reapply? Reply with one short sentence (
     final prompt = '''
 Compare these two skin images (before and after). Describe improvements in 2-3 short sentences (e.g. reduced redness, clearer texture). Be specific and encouraging.
 ''';
-    final contents = [
-      {
-        'role': 'user',
-        'parts': [
-          {
-            'inlineData': {
-              'data': base64Encode(beforeImage),
-              'mimeType': 'image/jpeg',
-            },
-          },
-          {'text': '--- BEFORE ---'},
-          {
-            'inlineData': {
-              'data': base64Encode(afterImage),
-              'mimeType': 'image/jpeg',
-            },
-          },
-          {'text': '--- AFTER ---\n$prompt'},
+    final text = await _fallback.complete(
+      AiRequest(
+        prompt: '--- BEFORE ---\n--- AFTER ---\n$prompt',
+        images: [
+          AiImagePart(beforeImage),
+          AiImagePart(afterImage),
         ],
-      },
-    ];
-
-    final responseJson =
-        await _generateContentWithFallback(contents: contents);
-    final text = _extractText(responseJson);
-    return text?.trim() ??
-        'Comparison complete. Keep up your routine!';
-  }
-
-  /// Core HTTP call with model selection.
-  Future<Map<String, dynamic>> _generateContent({
-    required String model,
-    required List<Map<String, dynamic>> contents,
-    String? systemInstruction,
-  }) async {
-    if (GeminiConfig.apiKey.isEmpty) {
-      throw Exception(
-          'GEMINI_API_KEY is not set. Provide it via --dart-define=GEMINI_API_KEY=...');
-    }
-
-    final uri = Uri.parse(
-        '$_apiBase/models/$model:generateContent?key=${GeminiConfig.apiKey}');
-
-    final body = <String, dynamic>{
-      'contents': contents,
-    };
-
-    if (systemInstruction != null && systemInstruction.isNotEmpty) {
-      body['systemInstruction'] = {
-        'role': 'user',
-        'parts': [
-          {'text': systemInstruction},
-        ],
-      };
-    }
-
-    debugPrint('🔮 Calling Gemini model: $model');
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+      ),
+      fallbackMessage: 'Comparison complete. Keep up your routine!',
     );
-
-    final decoded =
-        response.body.isNotEmpty ? jsonDecode(response.body) : null;
-
-    if (response.statusCode == 200 && decoded is Map<String, dynamic>) {
-      return decoded;
-    }
-
-    final error = decoded is Map<String, dynamic> ? decoded['error'] : null;
-    final errorMessage =
-        error is Map<String, dynamic> ? (error['message'] as String?) : null;
-    final errorCode =
-        error is Map<String, dynamic> ? (error['status'] as String?) : null;
-
-    throw GeminiApiException(
-      statusCode: response.statusCode,
-      code: errorCode,
-      message: errorMessage ??
-          'Gemini API error (HTTP ${response.statusCode}): ${response.body}',
-    );
+    return text.trim();
   }
-
-  /// Try models in order until one succeeds, handling rate limits gracefully.
-  Future<Map<String, dynamic>> _generateContentWithFallback({
-    required List<Map<String, dynamic>> contents,
-    String? systemInstruction,
-  }) async {
-    final models = [primaryModel, fallbackModel1, fallbackModel2];
-
-    GeminiApiException? lastRateLimit;
-    Exception? lastOther;
-
-    for (final model in models) {
-      try {
-        final json = await _generateContent(
-          model: model,
-          contents: contents,
-          systemInstruction: systemInstruction,
-        );
-        debugPrint('✅ Gemini call succeeded with model: $model');
-        return json;
-      } on GeminiApiException catch (e) {
-        debugPrint('⚠️  Gemini model $model failed: ${e.message}');
-
-        final isRateLimited = e.statusCode == 429 ||
-            e.code == 'RESOURCE_EXHAUSTED' ||
-            e.code == 'RATE_LIMIT_EXCEEDED';
-
-        if (isRateLimited) {
-          lastRateLimit = e;
-          debugPrint(
-              '🔁 Model $model is rate-limited or quota-exhausted. Falling back to next model.');
-          continue;
-        }
-
-        lastOther = e;
-        debugPrint('🔁 Non-rate-limit error for $model. Trying next model...');
-        continue;
-      } catch (e) {
-        lastOther = e is Exception ? e : Exception(e.toString());
-        debugPrint('⚠️  Unexpected error for $model: $e');
-        continue;
-      }
-    }
-
-    // If all models failed, surface the most informative error.
-    if (lastOther != null) throw lastOther;
-    if (lastRateLimit != null) throw lastRateLimit;
-    throw Exception('All Gemini models failed with unknown errors.');
-  }
-
-  /// Extract plain text from a Gemini generateContent response.
-  String? _extractText(Map<String, dynamic> json) {
-    final candidates = json['candidates'];
-    if (candidates is List && candidates.isNotEmpty) {
-      final content = candidates.first['content'];
-      if (content is Map<String, dynamic>) {
-        final parts = content['parts'];
-        if (parts is List && parts.isNotEmpty) {
-          final buffer = StringBuffer();
-          for (final part in parts) {
-            if (part is Map<String, dynamic>) {
-              final text = part['text'];
-              if (text is String && text.isNotEmpty) {
-                buffer.write(text);
-              }
-            }
-          }
-          final result = buffer.toString();
-          return result.isEmpty ? null : result;
-        }
-      }
-    }
-    return null;
-  }
-}
-
-/// Structured Gemini API exception with HTTP status and error code.
-class GeminiApiException implements Exception {
-  GeminiApiException({
-    required this.statusCode,
-    this.code,
-    required this.message,
-  });
-
-  final int statusCode;
-  final String? code;
-  final String message;
-
-  @override
-  String toString() => 'GeminiApiException($statusCode, $code, $message)';
 }
 
 enum ScanMode { pill, skin, food }

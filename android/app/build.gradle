@@ -5,6 +5,9 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Must match iOS PRODUCT_BUNDLE_IDENTIFIER (ios/Flutter/AppIdentity.xcconfig).
+def appBundleId = "com.nextlink.foryou"
+
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
@@ -12,7 +15,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.nextlink.foryou"
+    namespace = appBundleId
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,6 +23,8 @@ android {
         // Match modern Flutter/AGP defaults and avoid Java 21 toolchain issues.
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Required by flutter_local_notifications (and other plugins using Java 8+ APIs).
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -27,7 +32,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nextlink.foryou"
+        applicationId = appBundleId
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -47,16 +52,30 @@ android {
         }
     }
 
+    // 16 KB page size: store .so files uncompressed with correct ZIP alignment.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
     buildTypes {
         release {
             // Uses your real release keystore when key.properties is present.
             // Falls back to the default debug config if not, so local
             // `flutter run --release` still works without signing setup.
             signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            ndk {
+                debugSymbolLevel 'FULL'
+            }
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }

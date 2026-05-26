@@ -1,3 +1,6 @@
+import 'ai_config.dart';
+
+/// Back-compat alias for primary Gemini key.
 class GeminiConfig {
-  static const String apiKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
+  static String get apiKey => AiConfig.geminiApiKey;
 }

@@ -1,64 +1,82 @@
 import 'package:flutter/material.dart';
-import '../config/gemini_config.dart';
+
+import '../config/ai_config.dart';
 
 class ApiKeyDebugScreen extends StatelessWidget {
   const ApiKeyDebugScreen({super.key});
 
+  String _preview(String key) {
+    if (key.isEmpty) return 'Not set';
+    if (key.length <= 10) return '${key.substring(0, key.length)}...';
+    return '${key.substring(0, 10)}...';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final apiKey = GeminiConfig.apiKey;
-    final isSet = apiKey.isNotEmpty;
-    final preview = isSet ? '${apiKey.substring(0, 10)}...' : 'Not set';
+    final providers = [
+      ('GEMINI_API_KEY (Primary Gemini 3)', AiConfig.geminiApiKey),
+      ('GEMINI_OLD_KEY (Fallback 1.5 Flash)', AiConfig.geminiOldKey),
+      ('GROQ_API_KEY (Fallback Groq)', AiConfig.groqApiKey),
+      ('OPENROUTER_API_KEY (Fallback OpenRouter)', AiConfig.openRouterApiKey),
+    ];
 
     return Scaffold(
       appBar: AppBar(title: const Text('API Key Debug')),
       body: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: ListView(
           children: [
             Text(
-              'API Key Status',
+              'AI provider keys (compile-time)',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Keys are loaded via --dart-define at build/run time. Never commit secrets to source control.',
+              style: TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 20),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          isSet ? Icons.check_circle : Icons.error,
-                          color: isSet ? Colors.green : Colors.red,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          isSet ? 'API Key is configured' : 'API Key is MISSING',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: isSet ? Colors.green : Colors.red,
+            ...providers.map((p) {
+              final isSet = p.$2.isNotEmpty;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            isSet ? Icons.check_circle : Icons.error_outline,
+                            color: isSet ? Colors.green : Colors.orange,
+                            size: 22,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text('Preview: $preview'),
-                    if (!isSet) ...[
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Run with:\nflutter run --release --dart-define=GEMINI_API_KEY=your_key',
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              p.$1,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 8),
+                      Text('Preview: ${_preview(p.$2)}'),
                     ],
-                  ],
+                  ),
                 ),
-              ),
+              );
+            }),
+            const SizedBox(height: 8),
+            const Text(
+              'Example:\n'
+              'flutter run \\\n'
+              '  --dart-define=GEMINI_API_KEY=... \\\n'
+              '  --dart-define=GEMINI_OLD_KEY=... \\\n'
+              '  --dart-define=GROQ_API_KEY=... \\\n'
+              '  --dart-define=OPENROUTER_API_KEY=...',
+              style: TextStyle(fontFamily: 'monospace', fontSize: 11),
             ),
           ],
         ),

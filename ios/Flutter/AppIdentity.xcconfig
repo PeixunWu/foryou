@@ -1,0 +1,2 @@
+// Shared iOS bundle identifier (must match Android applicationId in app/build.gradle).
+PRODUCT_BUNDLE_IDENTIFIER=com.nextlink.foryou

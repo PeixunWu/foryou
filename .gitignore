@@ -48,3 +48,11 @@ app.*.map.json
 .env
 .env.local
 lib/config/env.dart
+
+# Android release signing
+key.properties
+**/key.properties
+!**/key.properties.example
+*.jks
+*.keystore
+!debug.keystore
